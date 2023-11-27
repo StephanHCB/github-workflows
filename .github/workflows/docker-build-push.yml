@@ -1,0 +1,89 @@
+name: Create and publish Docker image
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        required: false
+        default: 'ghcr.io'
+        type: string
+      image-name:
+        required: true
+        type: string
+      image-tags:
+        required: false
+        default: 'latest'
+        type: string
+      full-repo-url:
+        required: true
+        type: string
+      branch-or-tag-name:
+        required: true
+        type: string
+      commit-hash:
+        required: true
+        type: string
+      registry-user:
+        required: true
+        type: string
+    secrets:
+      registry-pass:
+        required: true
+        description:
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print debugging information
+        run: >
+          echo registry="$REGISTRY" &&
+          echo image-name="$IMAGE_NAME" &&
+          echo image-tags="$IMAGE_TAGS" &&
+          echo full-repo-url="$FULL_REPO_URL" &&
+          echo branch-or-tag-name="$BRANCH_OR_TAG_NAME" &&
+          echo commit-hash="$COMMIT_HASH" &&
+          echo registry-user="$REGISTRY_USER"
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAGS: ${{ inputs.image-tags }}
+          FULL_REPO_URL: ${{ inputs.full-repo-url }}
+          BRANCH_OR_TAG_NAME: ${{ inputs.branch-or-tag-name }}
+          COMMIT_HASH: ${{ inputs.commit-hash }}
+          REGISTRY_USER: ${{ inputs.registry-user }}
+
+      - name: Checkout repository
+        run: 'git clone -b "$BRANCH_OR_TAG_NAME" --depth 1 "$FULL_REPO_URL" app'
+        shell: bash
+        env:
+          FULL_REPO_URL: ${{ inputs.full-repo-url }}
+          BRANCH_OR_TAG_NAME: ${{ inputs.branch-or-tag-name }}
+
+      - name: Log in to the Container registry
+        run: 'echo "$REGISTRY_PASS" | docker login "$REGISTRY" -u "$REGISTRY_USER" --password-stdin'
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          REGISTRY_USER: ${{ inputs.registry-user }}
+          REGISTRY_PASS: ${{ secrets.registry-pass }}
+
+      - name: Docker build and push image
+        run: >
+          cd app &&
+          TAG_ARGS=$(echo -n "$IMAGE_TAGS" | sed -r "s_([^ :/]+)_ --tag $REGISTRY/$IMAGE_NAME:\1 _g") &&
+          docker build 
+          --label org.opencontainers.image.url="$FULL_REPO_URL"
+          --label org.opencontainers.image.revision="$COMMIT_HASH"
+          $TAG_ARGS
+          --pull
+          . &&
+          docker push -a "$REGISTRY/$IMAGE_NAME"
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          IMAGE_TAGS: ${{ inputs.image-tags }}
+          FULL_REPO_URL: ${{ inputs.full-repo-url }}
+          COMMIT_HASH: ${{ inputs.commit-hash }}
